@@ -1,16 +1,9 @@
-/* ============================================================================
-   «Мои смены 🐾» — iOS-style PWA-календарь рабочих смен (React + Vite)
-   Нежная версия с котиками и лапками — сделано с любовью для любимой девушки.
-   ----------------------------------------------------------------------------
-   Установка: заменить содержимое src/App.jsx этим кодом (остальные файлы
-   шаблона Vite не трогать). npm install && npm run dev
-   ========================================================================== */
-
 import { useEffect, useMemo, useState } from 'react';
 
 /* ----------------------------- Константы -------------------------------- */
 
 const STORAGE_KEY = 'schedule_app_data_v1';
+const MANUAL_KEY  = 'schedule_app_manual_v1';
 
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
   'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -35,17 +28,12 @@ const DEMO = `Неделя 1
 const pad2 = (n) => String(n).padStart(2, '0');
 const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const diffMin = (s, e) => { let d = toMin(e) - toMin(s); if (d <= 0) d += 1440; return d; };
-
 const isoOf = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 const isoToDate = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
 
 const fmtDur = (min) => {
   const h = Math.floor(min / 60), m = min % 60;
   return m ? `${h} ч ${m} м` : `${h} ч`;
-};
-const fmtChip = (min) => {
-  const h = Math.floor(min / 60), m = min % 60;
-  return m ? `${h}ч${pad2(m)}` : `${h}ч`;
 };
 const fmtShort = (iso) => { const [y, m, d] = iso.split('-'); return `${d}.${m}.${y}`; };
 const wdShort = (iso) => WD_SHORT[isoToDate(iso).getDay()];
@@ -54,23 +42,21 @@ const fmtFull = (iso) => {
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
-/* Настроение котика зависит от длительности смены */
 const catMood = (min) => {
   if (min <= 0) return 'Смены нет — киса сладко спит...';
-  if (min < 6 * 60) return 'Лёгкая смена — киса мурчит и довольна =^･ω･^=';
+  if (min < 6 * 60) return 'Лёгкая смена — киса мурчит =^･ω･^=';
   if (min <= 8 * 60) return 'Нормальная смена — мурчание стабильное 🐾';
-  return 'Долгая смена — срочно нужны обнимашки и вкусняшка! 💗';
+  return 'Долгая смена — срочно нужны обнимашки! 💗';
 };
 
 /* ----------------------------- Парсинг текста ---------------------------- */
 
 function parseSchedule(text) {
-  const lineDate = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s*\|\s*(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/;
-  const lineWeek = /^недел[яи]\s*(\d+)/i;
+  const lineDate  = /(\d{1,2})\.(\d{1,2})\.(\d{4})\s*\|\s*(\d{1,2}:\d{2})\s*[-–—]\s*(\d{1,2}:\d{2})/;
+  const lineWeek  = /^недел[яи]\s*(\d+)/i;
   const lineTotal = /всего часов\s*:\s*(\d+)\s*ч\s*(\d+)\s*м/i;
 
-  const weeks = [];
-  const events = [];
+  const weeks = [], events = [];
   let current = null;
 
   for (const rawLine of text.split(/\r?\n/)) {
@@ -80,29 +66,19 @@ function parseSchedule(text) {
     const wm = line.match(lineWeek);
     if (wm) {
       current = { label: `Неделя ${wm[1]}`, items: [], totalLabel: null, totalMinutes: null };
-      weeks.push(current);
-      continue;
+      weeks.push(current); continue;
     }
     const tm = line.match(lineTotal);
     if (tm && current) {
       current.totalMinutes = Number(tm[1]) * 60 + Number(tm[2]);
-      current.totalLabel = `${tm[1]} ч ${tm[2]} м`;
-      continue;
+      current.totalLabel = `${tm[1]} ч ${tm[2]} м`; continue;
     }
     const dm = line.match(lineDate);
     if (dm) {
       const [, d, mo, y, s, e] = dm;
-      if (!current) {
-        current = { label: 'Без недели', items: [], totalLabel: null, totalMinutes: null };
-        weeks.push(current);
-      }
+      if (!current) { current = { label: 'Без недели', items: [], totalLabel: null, totalMinutes: null }; weeks.push(current); }
       const dateISO = `${y}-${pad2(Number(mo))}-${pad2(Number(d))}`;
-      const ev = {
-        id: `${dateISO}_${s}_${e}_${events.length}`,
-        dateISO, start: s, end: e,
-        minutes: diffMin(s, e),
-        week: current.label,
-      };
+      const ev = { id: `imp_${dateISO}_${s}_${e}_${events.length}`, dateISO, start: s, end: e, minutes: diffMin(s, e), week: current.label };
       events.push(ev);
       current.items.push(ev);
     }
@@ -113,42 +89,30 @@ function parseSchedule(text) {
 /* ----------------------------- Экспорт .ics ------------------------------ */
 
 const icsEsc = (s) => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
-
 function icsLocal(iso, time) {
   const d = isoToDate(iso);
   const [h, mi] = time.split(':').map(Number);
   return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}T${pad2(h)}${pad2(mi)}00`;
 }
-
 function buildICS(events) {
   const now = new Date();
   const dtstamp = `${now.getUTCFullYear()}${pad2(now.getUTCMonth() + 1)}${pad2(now.getUTCDate())}T${pad2(now.getUTCHours())}${pad2(now.getUTCMinutes())}${pad2(now.getUTCSeconds())}Z`;
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//schedule-app//RU', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
   for (const ev of events) {
-    lines.push(
-        'BEGIN:VEVENT',
-        `UID:${ev.id}@schedule-app`,
-        `DTSTAMP:${dtstamp}`,
-        `DTSTART:${icsLocal(ev.dateISO, ev.start)}`,
-        `DTEND:${icsLocal(ev.dateISO, ev.end)}`,
+    lines.push('BEGIN:VEVENT', `UID:${ev.id}@schedule-app`, `DTSTAMP:${dtstamp}`,
+        `DTSTART:${icsLocal(ev.dateISO, ev.start)}`, `DTEND:${icsLocal(ev.dateISO, ev.end)}`,
         `SUMMARY:${icsEsc(`Смена ${ev.start}–${ev.end} (${fmtDur(ev.minutes)}) 🐾`)}`,
-        `DESCRIPTION:${icsEsc(ev.week)}`,
-        'END:VEVENT'
-    );
+        `DESCRIPTION:${icsEsc(ev.week || 'Ручная смена')}`, 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');
 }
-
 function downloadICS(events, name) {
   const blob = new Blob([buildICS(events)], { type: 'text/calendar;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -158,20 +122,24 @@ function loadInitial() {
   const today = new Date();
   const fallback = {
     data: { events: [], weeks: [] },
+    manual: [],
     raw: '',
     cursor: { y: today.getFullYear(), m: today.getMonth() },
   };
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && Array.isArray(saved.events) && saved.events.length) {
-      const d0 = isoToDate(saved.events[0].dateISO);
+    const saved  = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    const manual = JSON.parse(localStorage.getItem(MANUAL_KEY)  || '[]');
+    const allEvents = [...(saved?.events || []), ...(Array.isArray(manual) ? manual : [])];
+    if (allEvents.length) {
+      const d0 = isoToDate(allEvents[0].dateISO);
       return {
-        data: { events: saved.events, weeks: saved.weeks || [] },
-        raw: saved.raw || '',
+        data: { events: saved?.events || [], weeks: saved?.weeks || [] },
+        manual: Array.isArray(manual) ? manual : [],
+        raw: saved?.raw || '',
         cursor: { y: d0.getFullYear(), m: d0.getMonth() },
       };
     }
-  } catch { /* игнорируем повреждённые данные */ }
+  } catch {}
   return fallback;
 }
 
@@ -237,6 +205,8 @@ body {
   --bg: #fff6f8;
   --text: #4a2b34;
   --muted: #b08391;
+  --manual: #f59f00;
+  --manual-soft: rgba(245,159,0,.14);
   max-width: 430px; margin: 0 auto; min-height: 100dvh;
   background: var(--bg); position: relative; display: flex; flex-direction: column;
   color: var(--text);
@@ -292,20 +262,25 @@ body {
 .wd-row, .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px 2px; }
 .wd { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; padding: 4px 0; }
 .day {
-  border: 0; background: transparent; border-radius: 12px; min-height: 52px; padding: 4px 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-  font-family: inherit; cursor: default; color: var(--text);
+  border: 0; background: transparent; border-radius: 12px; min-height: 62px; padding: 6px 2px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  font-family: inherit; cursor: pointer; color: var(--text);
 }
-.day.clickable { cursor: pointer; }
-.day.clickable:active { background: var(--accent-soft); }
+.day:active { background: var(--accent-soft); }
 .day.out .num { color: #e3c6cf; }
-.day.out .chip { opacity: .4; }
+.day.out .chip { opacity: .35; }
 .num {
   font-size: 17px; font-weight: 500; min-width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center; border-radius: 50%;
 }
 .day.today .num { background: var(--accent); color: #fff; font-weight: 600; }
-.chip { font-size: 11px; font-weight: 600; color: var(--accent-deep); background: var(--accent-soft); border-radius: 8px; padding: 1px 6px; line-height: 16px; }
+.chip {
+  font-size: 9.5px; font-weight: 600; color: var(--accent-deep); background: var(--accent-soft);
+  border-radius: 6px; padding: 2px 4px; line-height: 12px; text-align: center;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chip.manual { color: #a86400; background: var(--manual-soft); }
+.chip.multi { color: #7a3e8a; background: rgba(180,120,220,.15); font-style: italic; }
 .stats-line { text-align: center; color: var(--muted); font-size: 13px; margin: 12px 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .stats-line .inline-paw { color: var(--accent); opacity: .6; }
 
@@ -358,7 +333,7 @@ textarea:focus { background: #fbeaf0; box-shadow: 0 0 0 2px rgba(255,107,149,.45
 .backdrop.shown { opacity: 1; }
 .sheet {
   position: fixed; left: 50%; bottom: 0; transform: translate(-50%, 105%);
-  width: min(430px, 100vw); max-height: 75dvh; overflow-y: auto;
+  width: min(430px, 100vw); max-height: 80dvh; overflow-y: auto;
   background: var(--bg); border-radius: 20px 20px 0 0; z-index: 50;
   padding: 6px 16px calc(16px + env(safe-area-inset-bottom));
   transition: transform .38s cubic-bezier(.32,.72,0,1);
@@ -379,13 +354,43 @@ textarea:focus { background: #fbeaf0; box-shadow: 0 0 0 2px rgba(255,107,149,.45
   color: #b76e86; font-size: 13px; margin: 0 0 12px; text-align: center;
 }
 .sheet-mood .cat { color: var(--accent); flex: none; }
+
+/* Карточки смен */
 .shift-card {
-  background: #fff; border-radius: 14px; padding: 14px 16px; margin-bottom: 8px;
-  display: flex; align-items: center; justify-content: space-between;
+  background: #fff; border-radius: 14px; padding: 12px 14px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 10px;
   box-shadow: 0 1px 3px rgba(214,51,108,.08);
 }
-.shift-time { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.shift-dur { font-size: 14px; font-weight: 600; color: var(--accent-deep); background: var(--accent-soft); padding: 4px 10px; border-radius: 10px; }
+.shift-card.manual { border-left: 3px solid var(--manual); }
+.shift-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.shift-time { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.shift-dur { font-size: 12px; font-weight: 600; color: var(--accent-deep); }
+.shift-badge { font-size: 10px; color: #a86400; font-weight: 600; }
+.shift-actions { display: flex; flex-direction: column; gap: 4px; }
+.icon-small {
+  width: 32px; height: 32px; border-radius: 8px; border: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 15px;
+}
+.icon-small.edit { background: var(--accent-soft); color: var(--accent-deep); }
+.icon-small.del { background: rgba(255,59,48,.10); color: #d70015; }
+.icon-small:active { transform: scale(.93); }
+
+/* Форма редактирования */
+.form-row {
+  background: #fff; border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(214,51,108,.08);
+}
+.form-label { font-size: 12px; color: var(--muted); text-transform: uppercase; font-weight: 600; margin-bottom: 6px; letter-spacing: .5px; }
+.time-input {
+  width: 100%; border: 0; background: #fdf0f4; border-radius: 10px;
+  padding: 12px 14px; font-size: 24px; font-weight: 600; font-family: inherit;
+  color: var(--text); outline: none; text-align: center; font-variant-numeric: tabular-nums;
+}
+.time-input:focus { background: #fbeaf0; box-shadow: 0 0 0 2px rgba(255,107,149,.45); }
+.form-hint { text-align: center; color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+.form-error { text-align: center; color: #d70015; font-size: 13px; margin: 8px 0; }
+.dual-time { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
 .sheet-total { text-align: center; color: var(--muted); font-size: 13px; margin: 6px 0 12px; }
 
 .paw-trail { display: flex; gap: 7px; align-items: center; color: var(--accent); pointer-events: none; }
@@ -401,14 +406,13 @@ textarea:focus { background: #fbeaf0; box-shadow: 0 0 0 2px rgba(255,107,149,.45
 /* ============================== Приложение =============================== */
 
 export default function App() {
-  /* Ленивая инициализация: читаем localStorage один раз при монтировании,
-     без вызова setState внутри useEffect (требование ESLint). */
   const initial = useState(loadInitial)[0];
 
-  const [view, setView] = useState('cal');           // 'cal' | 'weeks' | 'input'
+  const [view, setView] = useState('cal');
   const [raw, setRaw] = useState(initial.raw);
-  const [data, setData] = useState(initial.data);
-  const [msg, setMsg] = useState(null);              // { type: 'ok'|'err', text }
+  const [data, setData] = useState(initial.data);     // импортированные смены
+  const [manual, setManual] = useState(initial.manual); // ручные смены
+  const [msg, setMsg] = useState(null);
 
   const today = new Date();
   const todayISO = isoOf(today);
@@ -417,7 +421,11 @@ export default function App() {
   const [sheetDate, setSheetDate] = useState(null);
   const [sheetShown, setSheetShown] = useState(false);
 
-  /* Мета-теги iOS PWA + заголовок (только DOM-мутации, без setState) */
+  // Режим шторки: 'view' (список смен) | 'create' (новая) | 'edit' (редактирование)
+  const [sheetMode, setSheetMode] = useState('view');
+  const [form, setForm] = useState({ id: null, start: '09:00', end: '18:00' });
+  const [formError, setFormError] = useState('');
+
   useEffect(() => {
     document.title = 'Мои смены 🐾';
     const setMeta = (name, content) => {
@@ -433,19 +441,23 @@ export default function App() {
     setMeta('apple-mobile-web-app-title', 'Смены 🐾');
   }, []);
 
-  /* Блокировка скролла под шторкой (только DOM-мутация, без setState) */
   useEffect(() => {
     document.body.style.overflow = sheetDate ? 'hidden' : '';
   }, [sheetDate]);
 
+  // Все смены (импортированные + ручные), сгруппированные по дате
   const byDate = useMemo(() => {
     const map = new Map();
-    for (const ev of data.events) {
+    const add = (ev) => {
       if (!map.has(ev.dateISO)) map.set(ev.dateISO, []);
       map.get(ev.dateISO).push(ev);
-    }
+    };
+    for (const ev of data.events) add(ev);
+    for (const ev of manual) add(ev);
+    // Сортируем смены внутри дня по времени начала
+    for (const list of map.values()) list.sort((a, b) => toMin(a.start) - toMin(b.start));
     return map;
-  }, [data.events]);
+  }, [data.events, manual]);
 
   const matrix = useMemo(() => {
     const first = new Date(cursor.y, cursor.m, 1);
@@ -463,28 +475,95 @@ export default function App() {
 
   const monthStats = useMemo(() => {
     let count = 0, min = 0;
-    for (const ev of data.events) {
-      const d = isoToDate(ev.dateISO);
-      if (d.getFullYear() === cursor.y && d.getMonth() === cursor.m) { count++; min += ev.minutes; }
-    }
+    const inMonth = (iso) => { const d = isoToDate(iso); return d.getFullYear() === cursor.y && d.getMonth() === cursor.m; };
+    for (const ev of data.events) if (inMonth(ev.dateISO)) { count++; min += ev.minutes; }
+    for (const ev of manual)    if (inMonth(ev.dateISO)) { count++; min += ev.minutes; }
     return { count, min };
-  }, [data.events, cursor]);
+  }, [data.events, manual, cursor]);
 
-  const totalAll = useMemo(() => data.events.reduce((s, e) => s + e.minutes, 0), [data.events]);
+  const totalAll = useMemo(() =>
+          data.events.reduce((s, e) => s + e.minutes, 0) +
+          manual.reduce((s, e) => s + e.minutes, 0),
+      [data.events, manual]);
 
   const shiftMonth = (delta) => setCursor((c) => {
     const d = new Date(c.y, c.m + delta, 1);
     return { y: d.getFullYear(), m: d.getMonth() };
   });
 
-  const openSheet = (iso) => {
+  /* ------------------ Логика шторки ------------------ */
+
+  const openSheetForDay = (iso) => {
     setSheetDate(iso);
+    const evs = byDate.get(iso) || [];
+    if (evs.length === 0) {
+      // Пустой день — сразу в режим создания
+      setSheetMode('create');
+      setForm({ id: null, start: '09:00', end: '18:00' });
+    } else {
+      setSheetMode('view');
+    }
+    setFormError('');
     requestAnimationFrame(() => requestAnimationFrame(() => setSheetShown(true)));
   };
+
   const closeSheet = () => {
     setSheetShown(false);
-    setTimeout(() => setSheetDate(null), 340);
+    setTimeout(() => { setSheetDate(null); setSheetMode('view'); setFormError(''); }, 340);
   };
+
+  const startCreate = () => {
+    setSheetMode('create');
+    setForm({ id: null, start: '09:00', end: '18:00' });
+    setFormError('');
+  };
+
+  const startEdit = (ev) => {
+    setSheetMode('edit');
+    setForm({ id: ev.id, start: ev.start, end: ev.end });
+    setFormError('');
+  };
+
+  const saveManual = (newManual) => {
+    setManual(newManual);
+    localStorage.setItem(MANUAL_KEY, JSON.stringify(newManual));
+  };
+
+  const saveForm = () => {
+    const { start, end, id } = form;
+    if (!start || !end) { setFormError('Укажи начало и конец смены'); return; }
+    const minutes = diffMin(start, end);
+    if (minutes < 15) { setFormError('Минимальная длительность — 15 минут'); return; }
+    if (minutes > 24 * 60) { setFormError('Смена не может быть длиннее 24 часов'); return; }
+
+    let newManual;
+    if (sheetMode === 'create') {
+      const newEv = {
+        id: `man_${sheetDate}_${start}_${end}_${Date.now()}`,
+        dateISO: sheetDate, start, end, minutes,
+        manual: true, week: 'Ручная смена',
+      };
+      newManual = [...manual, newEv];
+    } else {
+      // edit
+      newManual = manual.map((e) => e.id === id
+          ? { ...e, start, end, minutes }
+          : e);
+    }
+    saveManual(newManual);
+    setSheetMode('view');
+    setFormError('');
+  };
+
+  const deleteShift = (id) => {
+    // Удалять можно только ручные смены
+    const target = manual.find((e) => e.id === id);
+    if (!target) return;
+    saveManual(manual.filter((e) => e.id !== id));
+    setSheetMode('view');
+  };
+
+  /* ------------------ Остальное ------------------ */
 
   const handleParse = () => {
     const res = parseSchedule(raw);
@@ -502,8 +581,10 @@ export default function App() {
 
   const handleClear = () => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(MANUAL_KEY);
     setData({ events: [], weeks: [] });
-    setMsg({ type: 'ok', text: 'Сохранённые данные удалены. Котик всё простил =^･ω･^=' });
+    setManual([]);
+    setMsg({ type: 'ok', text: 'Все данные удалены. Котик всё простил =^･ω･^=' });
   };
 
   const pasteClipboard = async () => {
@@ -512,13 +593,14 @@ export default function App() {
       if (t) { setRaw(t); setMsg({ type: 'ok', text: 'Текст вставлен из буфера обмена 🐾' }); }
       else setMsg({ type: 'err', text: 'Буфер обмена пуст' });
     } catch {
-      setMsg({ type: 'err', text: 'Браузер не дал доступ к буферу — вставьте текст вручную (долгое нажатие → Вставить)' });
+      setMsg({ type: 'err', text: 'Браузер не дал доступ к буферу — вставьте текст вручную' });
     }
   };
 
   const exportAll = () => {
-    if (!data.events.length) return;
-    downloadICS(data.events, `smeny_${data.events[0].dateISO}_${data.events[data.events.length - 1].dateISO}.ics`);
+    const all = [...data.events, ...manual];
+    if (!all.length) return;
+    downloadICS(all, `smeny_${all[0].dateISO}_${all[all.length - 1].dateISO}.ics`);
   };
 
   const weekSum = (w) => w.items.reduce((s, e) => s + e.minutes, 0);
@@ -539,11 +621,11 @@ export default function App() {
                 <h1 className="title">Мои смены</h1>
               </div>
               <div className="subtitle">
-                {data.events.length ? `${data.events.length} смен · ${fmtDur(totalAll)}` : 'расписание из текста'}
+                {totalAll > 0 ? `${data.events.length + manual.length} смен · ${fmtDur(totalAll)}` : 'расписание из текста'}
                 <Paw size={11} className="inline-paw" />
               </div>
             </div>
-            <button className="icon-btn" disabled={!data.events.length} onClick={exportAll} title="Экспорт всех смен в .ics">
+            <button className="icon-btn" disabled={!(data.events.length + manual.length)} onClick={exportAll} title="Экспорт всех смен в .ics">
               {ShareIcon}
             </button>
           </div>
@@ -575,14 +657,25 @@ export default function App() {
                   {matrix.map((row, ri) => row.map((d, di) => {
                     const iso = isoOf(d);
                     const evs = byDate.get(iso) || [];
-                    const min = evs.reduce((s, e) => s + e.minutes, 0);
                     const inMonth = d.getMonth() === cursor.m;
-                    const cls = 'day' + (inMonth ? '' : ' out') + (iso === todayISO ? ' today' : '') + (evs.length ? ' clickable' : '');
+                    const cls = 'day' + (inMonth ? '' : ' out') + (iso === todayISO ? ' today' : '');
+
+                    let chip = null;
+                    if (evs.length === 1) {
+                      const ev = evs[0];
+                      chip = (
+                          <span className={'chip' + (ev.manual ? ' manual' : '')}>
+                      {ev.start}–{ev.end}
+                    </span>
+                      );
+                    } else if (evs.length > 1) {
+                      chip = <span className="chip multi">{evs.length} смен</span>;
+                    }
+
                     return (
-                        <button key={`${ri}-${di}`} className={cls}
-                                onClick={evs.length ? () => openSheet(iso) : undefined}>
+                        <button key={`${ri}-${di}`} className={cls} onClick={() => openSheetForDay(iso)}>
                           <span className="num">{d.getDate()}</span>
-                          {evs.length > 0 && <span className="chip">{fmtChip(min)}</span>}
+                          {chip}
                         </button>
                     );
                   }))}
@@ -596,7 +689,7 @@ export default function App() {
                 <Paw size={11} className="inline-paw" />
               </div>
 
-              {!data.events.length && (
+              {!data.events.length && !manual.length && (
                   <div className="empty">
                     <div className="sleep-row">
                       <CatFace size={72} className="cat" />
@@ -604,9 +697,7 @@ export default function App() {
                       <span className="z z2">z</span>
                       <span className="z z3">z</span>
                     </div>
-                    Пока нет смен… Котик спит и ждёт расписание 🐾
-                    <br />
-                    <button className="btn primary" onClick={() => setView('input')}>Ввести расписание</button>
+                    Пока нет смен… Нажми на любой день или введи расписание 🐾
                   </div>
               )}
             </main>
@@ -664,8 +755,8 @@ export default function App() {
                 </div>
                 <button className="btn primary" onClick={handleParse}>Разобрать и сохранить 🐾</button>
                 {msg && <div className={'msg ' + msg.type}>{msg.text}</div>}
-                {data.events.length > 0 && (
-                    <button className="btn ghost-danger" onClick={handleClear}>Удалить сохранённые данные</button>
+                {(data.events.length > 0 || manual.length > 0) && (
+                    <button className="btn ghost-danger" onClick={handleClear}>Удалить все сохранённые данные</button>
                 )}
               </div>
             </main>
@@ -677,7 +768,7 @@ export default function App() {
           <Paw size={11} />
         </footer>
 
-        {/* Bottom sheet с деталями дня */}
+        {/* Bottom sheet */}
         <div className={'backdrop' + (sheetShown ? ' shown' : '')}
              onClick={closeSheet}
              style={{ pointerEvents: sheetDate ? 'auto' : 'none' }} />
@@ -688,27 +779,86 @@ export default function App() {
                 <div>
                   <div className="sheet-date">{fmtFull(sheetDate)}</div>
                   <div className="sheet-week">
-                    {dayEvents[0] ? dayEvents[0].week : ''}
+                    {dayEvents[0]?.week || 'Выбранный день'}
                     <Paw size={11} className="inline-paw" />
                   </div>
                 </div>
                 <button className="sheet-close" onClick={closeSheet} aria-label="Закрыть">✕</button>
               </div>
-              <div className="sheet-mood">
-                <CatFace size={20} className="cat" />
-                {catMood(dayMin)}
-              </div>
-              {dayEvents.map((ev) => (
-                  <div className="shift-card" key={ev.id}>
-                    <div className="shift-time">{ev.start}–{ev.end}</div>
-                    <div className="shift-dur">{fmtDur(ev.minutes)}</div>
-                  </div>
-              ))}
-              <div className="sheet-total">Итого за день: {fmtDur(dayMin)}</div>
-              <button className="btn primary" onClick={() => downloadICS(dayEvents, `smena_${sheetDate}.ics`)}>
-                Добавить день в календарь (.ics)
-              </button>
-              <button className="btn secondary wide" onClick={closeSheet}>Готово</button>
+
+              {sheetMode === 'view' && (
+                  <>
+                    {dayEvents.length === 0 && (
+                        <div className="sheet-mood">
+                          <CatFace size={20} className="cat" />
+                          Смены нет — киса сладко спит...
+                        </div>
+                    )}
+                    {dayEvents.map((ev) => (
+                        <div key={ev.id} className={'shift-card' + (ev.manual ? ' manual' : '')}>
+                          <div className="shift-info">
+                            <div className="shift-time">{ev.start}–{ev.end}</div>
+                            <div className="shift-dur">{fmtDur(ev.minutes)}</div>
+                            {ev.manual && <div className="shift-badge">ручная</div>}
+                          </div>
+                          {ev.manual && (
+                              <div className="shift-actions">
+                                <button className="icon-small edit" onClick={() => startEdit(ev)} aria-label="Изменить">✎</button>
+                                <button className="icon-small del"  onClick={() => deleteShift(ev.id)} aria-label="Удалить">✕</button>
+                              </div>
+                          )}
+                        </div>
+                    ))}
+                    <div className="sheet-total">Итого за день: {fmtDur(dayMin)}</div>
+                    <button className="btn primary" onClick={startCreate}>
+                      + Добавить смену
+                    </button>
+                    {dayEvents.length > 0 && (
+                        <button className="btn secondary wide" onClick={() => downloadICS(dayEvents, `smena_${sheetDate}.ics`)}>
+                          В календарь (.ics)
+                        </button>
+                    )}
+                    <button className="btn secondary wide" onClick={closeSheet}>Готово</button>
+                  </>
+              )}
+
+              {(sheetMode === 'create' || sheetMode === 'edit') && (
+                  <>
+                    <div className="sheet-mood">
+                      <CatFace size={20} className="cat" />
+                      {sheetMode === 'create' ? 'Новая смена' : 'Редактирование смены'}
+                    </div>
+                    <div className="form-row">
+                      <div className="dual-time">
+                        <div>
+                          <div className="form-label">Начало</div>
+                          <input type="time" className="time-input"
+                                 value={form.start}
+                                 onChange={(e) => setForm({ ...form, start: e.target.value })} />
+                        </div>
+                        <div>
+                          <div className="form-label">Конец</div>
+                          <input type="time" className="time-input"
+                                 value={form.end}
+                                 onChange={(e) => setForm({ ...form, end: e.target.value })} />
+                        </div>
+                      </div>
+                      <div className="form-hint">Нажми на время — откроется колёсико 🐾</div>
+                      {formError && <div className="form-error">{formError}</div>}
+                    </div>
+                    <button className="btn primary" onClick={saveForm}>
+                      {sheetMode === 'create' ? 'Сохранить смену 🐾' : 'Сохранить изменения'}
+                    </button>
+                    {sheetMode === 'edit' && (
+                        <button className="btn ghost-danger" onClick={() => deleteShift(form.id)}>
+                          Удалить эту смену
+                        </button>
+                    )}
+                    <button className="btn secondary wide" onClick={() => { setSheetMode('view'); setFormError(''); }}>
+                      Отмена
+                    </button>
+                  </>
+              )}
             </div>
         )}
       </div>
