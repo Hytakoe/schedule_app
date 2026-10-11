@@ -259,12 +259,13 @@ body {
 
 .month-card { background: #fff; border-radius: 16px; padding: 12px 8px; box-shadow: 0 1px 3px rgba(214,51,108,.08); position: relative; overflow: hidden; }
 .month-card .paw-trail { position: absolute; bottom: 6px; right: 10px; opacity: .14; }
-.wd-row, .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px 2px; }
+.wd-row, .grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px 2px; }
 .wd { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; padding: 4px 0; }
 .day {
   border: 0; background: transparent; border-radius: 12px; min-height: 62px; padding: 6px 2px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   font-family: inherit; cursor: pointer; color: var(--text);
+  min-width: 0; overflow: hidden;
 }
 .day:active { background: var(--accent-soft); }
 .day.out .num { color: #e3c6cf; }
@@ -275,10 +276,13 @@ body {
 }
 .day.today .num { background: var(--accent); color: #fff; font-weight: 600; }
 .chip {
-  font-size: 9.5px; font-weight: 600; color: var(--accent-deep); background: var(--accent-soft);
-  border-radius: 6px; padding: 2px 4px; line-height: 12px; text-align: center;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center;
+  font-size: 9px; font-weight: 600; color: var(--accent-deep); background: var(--accent-soft);
+  border-radius: 6px; padding: 2px 2px; line-height: 11px;
+  max-width: 100%; font-variant-numeric: tabular-nums;
 }
+.chip span { white-space: nowrap; }
+.chip.multi { flex-direction: row; padding: 2px 4px; }
 .chip.manual { color: #a86400; background: var(--manual-soft); }
 .chip.multi { color: #7a3e8a; background: rgba(180,120,220,.15); font-style: italic; }
 .stats-line { text-align: center; color: var(--muted); font-size: 13px; margin: 12px 0 4px; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -665,11 +669,16 @@ export default function App() {
                       const ev = evs[0];
                       chip = (
                           <span className={'chip' + (ev.manual ? ' manual' : '')}>
-                      {ev.start}–{ev.end}
+                      <span>{ev.start}</span>
+                      <span>{ev.end}</span>
                     </span>
                       );
                     } else if (evs.length > 1) {
-                      chip = <span className="chip multi">{evs.length} смен</span>;
+                      chip = (
+                          <span className="chip multi">
+                      <span>{evs.length} смен</span>
+                    </span>
+                      );
                     }
 
                     return (
